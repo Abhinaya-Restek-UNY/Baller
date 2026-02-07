@@ -1,0 +1,17 @@
+
+# Build outputs
+build/
+Build/
+build-*/
+build.*/
+Debug/
+Release/
+
+# Install artifacts
+install/
+Install/
+
+# Logs
+log/
+logs/
+*.log
