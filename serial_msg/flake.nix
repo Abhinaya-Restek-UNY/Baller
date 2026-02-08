@@ -8,6 +8,7 @@
 
   outputs =
     {
+      self,
       nixpkgs,
       flake-utils,
     }:
@@ -19,9 +20,11 @@
       in
       {
         devShells.default = pkgs.mkShell {
+
+          stdenv = pkgs.gccStdenv;
           packages = [
             pkgs.gcc
-            pkgs.clang
+            pkgs.clang-tools
             pkgs.cmake
             pkgs.ninja
           ];
