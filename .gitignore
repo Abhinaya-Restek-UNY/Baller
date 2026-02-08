@@ -7,6 +7,8 @@ build.*/
 Debug/
 Release/
 
+.cache/
+
 # Install artifacts
 install/
 Install/

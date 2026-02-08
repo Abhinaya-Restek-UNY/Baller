@@ -2,7 +2,7 @@
   description = "STM32 firmware build flake";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -22,6 +22,7 @@
         devShells.default = pkgs.mkShell {
           packages = [
             pkgs.gcc-arm-embedded
+            pkgs.clang
             pkgs.cmake
             pkgs.ninja
             pkgs.gnumake
