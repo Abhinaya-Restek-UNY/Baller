@@ -77,14 +77,12 @@ int main(void) {
 
   /* USER CODE BEGIN Init */
 
-  HAL_Init_Hook();
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-  SysInit_Hook();
 
   /* USER CODE END SysInit */
 
@@ -92,14 +90,12 @@ int main(void) {
   MX_GPIO_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  setup(&huart1);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
-    loop();
 
     /* USER CODE END WHILE */
 
