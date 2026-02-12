@@ -1,18 +1,17 @@
 cmake_minimum_required(VERSION 3.8)
-project(transmitter)
+project(baller_cpp_ros)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
 find_package(rclcpp REQUIRED)
-
-add_executable(transmitter_node src/main.cpp)
-ament_target_dependencies(transmitter_node rclcpp)
+find_package(std_msgs REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -25,5 +24,14 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+add_executable(robot_controll src/robot_controll.cpp)
+
+ament_target_dependencies(robot_controll rclcpp std_msgs)
+
+INSTALL(TARGETS 
+	robot_controll
+	DESTINATION lib/${PROJECT_NAME}
+)
 
 ament_package()

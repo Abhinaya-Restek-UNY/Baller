@@ -36,7 +36,6 @@ extern "C" {
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
-
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -53,11 +52,6 @@ extern "C" {
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-void beginning_Hook();
-void HAL_Init_Hook();
-void SysInit_Hook();
-void setup();
-void loop();
 
 /* USER CODE END EFP */
 

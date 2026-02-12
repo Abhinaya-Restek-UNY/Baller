@@ -22,18 +22,21 @@
         devShells.default = pkgs.mkShell {
           packages = [
             pkgs.gcc-arm-embedded
+            pkgs.gdb
             pkgs.clang
             pkgs.cmake
             pkgs.ninja
             pkgs.gnumake
             pkgs.openocd
+            pkgs.stlink
           ];
 
           shellHook = ''
-            export CC=arm-none-eabi-gcc
-            export CXX=arm-none-eabi-g++
-            export OBJCOPY=arm-none-eabi-objcopy
-            export SIZE=arm-none-eabi-size
+            	  export CC=arm-none-eabi-gcc
+            	  export CXX=arm-none-eabi-g++
+            	  export OBJCOPY=arm-none-eabi-objcopy
+            	  export SIZE=arm-none-eabi-size
+            	  export OPENOCD=${pkgs.openocd}
           '';
         };
       }

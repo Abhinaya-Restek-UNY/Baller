@@ -1,8 +1,0 @@
-[
-{
-  "directory": "/home/febri/Project/abhinaya/Baller/serial_msg/build",
-  "command": "/nix/store/x45d95acx6rybkb5cidrxxffval9k2pg-gcc-wrapper-14.3.0/bin/g++  -I/home/febri/Project/abhinaya/Baller/serial_msg/include -std=gnu++20 -o CMakeFiles/serial_msg.dir/src/MessageManager.cpp.o -c /home/febri/Project/abhinaya/Baller/serial_msg/src/MessageManager.cpp",
-  "file": "/home/febri/Project/abhinaya/Baller/serial_msg/src/MessageManager.cpp",
-  "output": "CMakeFiles/serial_msg.dir/src/MessageManager.cpp.o"
-}
-]
