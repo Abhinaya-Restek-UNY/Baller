@@ -6,6 +6,7 @@ build-*/
 build.*/
 Debug/
 Release/
+compile_commands.json
 
 .cache/
 
