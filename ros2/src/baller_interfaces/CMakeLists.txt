@@ -1,17 +1,16 @@
 cmake_minimum_required(VERSION 3.8)
-project(baller_cpp_ros)
+project(baller_interfaces)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(std_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+# uncomment the following section in order to fill in
+# further dependencies manually.
+# find_package(<dependency> REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -25,13 +24,10 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-add_executable(robot_controll src/robot_controll.cpp)
-
-ament_target_dependencies(robot_controll rclcpp std_msgs)
-
-INSTALL(TARGETS 
-	robot_controll
-	DESTINATION lib/${PROJECT_NAME}
+rosidl_generate_interfaces(${PROJECT_NAME}
+	"srv/MotorParameter.srv"
 )
+
+ament_export_dependencies(rosidl_default_runtime)
 
 ament_package()

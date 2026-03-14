@@ -24,6 +24,7 @@
             pkgs.colcon
             pkgs.sdl3
             pkgs.bear
+            pkgs.boost
             pkgs.clang-tools
             # ... other non-ROS packages
             (
@@ -33,6 +34,9 @@
                   ros-core
 
                   ament-cmake-core
+                  python-cmake-module
+                  rosidl-default-generators
+                  rosidl-default-runtime
                   # ... other ROS packages
                 ];
               }
