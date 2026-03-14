@@ -24,6 +24,7 @@
 #include "motor.h"
 #include "serial_hub_stm.h"
 #include "stm32f4xx_hal.h"
+#include "stm32f4xx_hal_gpio.h"
 #include "stm32f4xx_hal_uart.h"
 #include "uart_direction.h"
 
@@ -55,6 +56,7 @@ TIM_HandleTypeDef htim12;
 
 UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_rx;
+DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
 
@@ -122,7 +124,7 @@ motor_handle_t motor_bl = {.GPIOx_in1 = Motor4A_GPIO_Port,
                            .channel = TIM_CHANNEL_2
 
 };
-void serial_hub_motor_direction_cb(uint8_t *data, fsize_t size) {
+void serial_hub_motor_direction_cb(void *ctx, uint8_t *data, fsize_t size) {
   packet_motor_direction *dir = (packet_motor_direction *)data;
   motor_set_direction(&motor_fr, dir->front_right);
   motor_set_direction(&motor_fl, dir->front_left);
@@ -171,14 +173,19 @@ int main(void) {
   MX_TIM4_Init();
   MX_TIM5_Init();
   /* USER CODE BEGIN 2 */
+
   serial_hub_initialize(&uart_hub, serial_hub_write_cb, NULL);
   serial_hub_reserve_memory(&uart_hub, sizeof(packet_encoder_data));
+
   HAL_UARTEx_ReceiveToIdle_DMA(&huart2, dma_rx_buf, sizeof(dma_rx_buf));
 
   serial_hub_attach_topic(&uart_hub, PACKET_MOTOR_DIRECTION_ID,
-                          sizeof(packet_motor_direction),
+                          sizeof(packet_motor_direction), NULL,
                           serial_hub_motor_direction_cb);
 
+  motor_init(&motor_fr);
+  motor_init(&motor_fl);
+  motor_init(&motor_br);
   motor_init(&motor_bl);
 
   /* USER CODE END 2 */
@@ -197,7 +204,14 @@ int main(void) {
   HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
   HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
   HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_ALL);
+  uint8_t count = 0;
+
   while (1) {
+    count = (count + 1) % 25;
+    if (!count) {
+      HAL_GPIO_TogglePin(LED_BUILTIN_GPIO_Port, LED_BUILTIN_Pin);
+    }
+
     encoder_data.timestamp = HAL_GetTick();
 
     encoder_current_a = __HAL_TIM_GET_COUNTER(&htim3);
@@ -218,6 +232,7 @@ int main(void) {
     serial_hub_write_topic(&uart_hub, PACKET_ENCODER_DATA_ID,
                            (uint8_t *)&encoder_data,
                            sizeof(packet_encoder_data));
+
     HAL_Delay(10);
   }
   /* USER CODE END 3 */
@@ -579,6 +594,9 @@ static void MX_DMA_Init(void) {
   /* DMA1_Stream5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+  /* DMA1_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
 }
 
 /**

@@ -72,7 +72,6 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
     motor
     serial_hub
-    omni
 
     # Add user defined libraries
 )
