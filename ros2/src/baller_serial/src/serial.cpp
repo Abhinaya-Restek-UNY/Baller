@@ -137,16 +137,28 @@ private:
 
   static void on_receive_mpu(BallerSerial *_this, packet_mpu *packet,
                              fsize_t size) {
+    RCLCPP_INFO(
+        _this->get_logger(),
+        "Received mpu: accel(%4d, %4d, %4d) quatern(%.2f, %.2f, %.2f, %.2f)",
+        packet->a_x, packet->a_y, packet->a_z, packet->q_w, packet->q_x,
+        packet->q_y, packet->q_z);
     // TODO: Integrate with ukf_localization_node and packet_time
   };
 
   static void on_receive_encoder(BallerSerial *_this, packet_encoder *packet,
                                  fsize_t size) {
+
+    RCLCPP_INFO(_this->get_logger(), "Received encoder: %d %d %d",
+                packet->revolutionA, packet->revolutionB, packet->revolutionC);
     // TODO: Integrate with ukf_localization_node and packet_time
   }
 
   static void on_receive_time(BallerSerial *_this, packet_time *packet,
                               fsize_t size) {
+    RCLCPP_INFO(_this->get_logger(),
+                "Received time: index(%d) timestamp(%lu) delta(%lu) ",
+                packet->unit_index, packet->timestamp, packet->delta);
+
     // TODO: Create local time syncing mechanism to integrate with
     // ukf_localization_node
   }
