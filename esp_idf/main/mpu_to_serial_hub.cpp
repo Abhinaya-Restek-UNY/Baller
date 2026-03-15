@@ -3,6 +3,7 @@
 #include "driver/i2c_master.h"
 #include "freertos/projdefs.h"
 #include "serial_hub.h"
+#include "timetell.hpp"
 #include <memory>
 
 static void IRAM_ATTR gpio_isr_handler(void *arg) {
@@ -16,43 +17,48 @@ static void IRAM_ATTR gpio_isr_handler(void *arg) {
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-void __mpu_task(void *pvParameter) {
-  MPU6050 *mpu = (MPU6050 *)pvParameter;
+struct __mpu_task_param {
+  MPU6050 *mpu;
+  serial_hub_handle_t *hub;
+};
 
-  float quat_f[4];
-  uint8_t count = 0;
+void __mpu_task(void *pvParameter) {
+  MPU6050 *mpu = ((__mpu_task_param *)pvParameter)->mpu;
+  serial_hub_handle_t *serial_hub = ((__mpu_task_param *)pvParameter)->hub;
+
+  packet_mpu packet = {0, 0, 0, 0, 0, 0, 0};
   while (1) {
 
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    packet.timestamp = get_time_micros();
 
     mpu->dmpGetCurrentFIFOPacket(fifo_buffer);
     mpu->dmpGetQuaternion(&quat, fifo_buffer);
     mpu->dmpGetAccel(&accel_raw, fifo_buffer);
     mpu->dmpGetGravity(&gravity, &quat);
     mpu->dmpGetLinearAccel(&accel_real, &accel_raw, &gravity);
-    quat_f[0] = quat.w;
-    quat_f[1] = quat.x;
-    quat_f[2] = quat.y;
-    quat_f[3] = quat.z;
+    packet.q_w = quat.w;
+    packet.q_x = quat.x;
+    packet.q_y = quat.y;
+    packet.q_z = quat.z;
 
-    serial_hub_write_topic(&serial_hub, 1, (uint8_t *)quat_f, sizeof(quat_f));
+    packet.a_x = accel_real.x;
+    packet.a_y = accel_real.y;
+    packet.a_z = accel_real.z;
 
-    if (count == 0) {
-      blink();
-    }
-    count = (count + 1) % 30;
+    serial_hub_write_topic(serial_hub, MPU_PACKET_ID, (uint8_t *)&packet,
+                           sizeof(packet_mpu));
+    blink();
   }
+
+  delete[] (__mpu_task_param *)pvParameter;
 }
 
 std::unique_ptr<MPU6050> mpu;
 
-void write_cb(UART *ser_port, uint8_t *data, fsize_t size) {
-  ser_port->write(data, size);
-}
-int8_t setup_mpu6050_interrupt(UART *io, gpio_num_t interrupt_pin) {
+int8_t setup_mpu6050_interrupt(serial_hub_handle_t *serial_hub,
+                               gpio_num_t interrupt_pin) {
   // TODO: serial_hub shall not be here.
-  serial_hub_initialize(&serial_hub, (write_cb_t)write_cb, io);
-  serial_hub_reserve_memory(&serial_hub, sizeof(quat));
 
   gpio_config_t io_conf{
       .pin_bit_mask = (1ULL << interrupt_pin),
@@ -65,8 +71,10 @@ int8_t setup_mpu6050_interrupt(UART *io, gpio_num_t interrupt_pin) {
   mpu->getIntStatus();
   mpu->resetFIFO();
 
-  if (xTaskCreate(__mpu_task, "mpu_task", 4096, mpu.get(), 10,
-                  &mpuTaskHandle) != pdPASS) {
+  __mpu_task_param *_p =
+      new __mpu_task_param{.mpu = mpu.get(), .hub = serial_hub};
+  if (xTaskCreate(__mpu_task, "mpu_task", 4096, _p, 10, &mpuTaskHandle) !=
+      pdPASS) {
     return -1;
   }
 

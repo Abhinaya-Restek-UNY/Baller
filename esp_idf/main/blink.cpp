@@ -5,10 +5,18 @@
 #include <stdint.h>
 
 uint8_t level = 0;
+uint8_t period = 0;
 void blink() {
+  period++;
+  if (period % 25 == 0) {
+    level = !level;
+  }
   gpio_set_level(GPIO_NUM_2, level);
-  level = !level;
 };
+
+void blink_toggle() {
+  gpio_set_level(GPIO_NUM_2, gpio_get_level(GPIO_NUM_2) > 0 ? 0 : 1);
+}
 
 void blink_fatal() {
   while (true) {
