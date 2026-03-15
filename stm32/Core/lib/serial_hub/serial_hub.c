@@ -4,6 +4,7 @@
 extern "C" {
 #endif
 #include "serial_hub.h"
+#include "stddef.h"
 #include "stdlib.h"
 
 #define SERIAL_HUB_PAYLOAD_SIZE 2
@@ -154,8 +155,8 @@ inline fsize_t serial_hub_get_next_packet(uint8_t *currentCOB_byte,
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
-fsize_t serial_hub_start_reading(serial_hub_handle_t *handle, uint8_t *start,
-                                 uint8_t *end) {
+inline fsize_t serial_hub_start_reading(serial_hub_handle_t *handle,
+                                        uint8_t *start, uint8_t *end) {
   fsize_t in_idx = 0;
   fsize_t in_len = end - start;
 
@@ -213,6 +214,9 @@ fsize_t serial_hub_start_reading(serial_hub_handle_t *handle, uint8_t *start,
 
   // 5. Fire callback if payload is fully assembled
   if (handle->__count == handle->__current_topic->expected_length) {
+    if (handle->__count == handle->__next_zero && handle->__prev_zero != 255) {
+      handle->__read_buf[handle->__count - 1] = 0x00;
+    }
     handle->__current_topic->callback(handle->__current_topic->ctx,
                                       handle->__read_buf,
                                       handle->__current_topic->expected_length);
