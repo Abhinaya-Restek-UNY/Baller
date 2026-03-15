@@ -2,8 +2,8 @@
 #define SERIAL_HUB_STM_H
 
 #include "motor.h"
-#define PACKET_ENCODER_DATA_ID 4
-#define PACKET_MOTOR_DIRECTION_ID 5
+#define ENCODER_PACKET_ID 1
+#define MOTOR_PACKET_ID 4
 
 typedef struct {
   int32_t revolutionA;
