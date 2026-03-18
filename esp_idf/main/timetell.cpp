@@ -13,7 +13,7 @@ void vPeriodicTask(void *pvParameters) {
   serial_hub_handle_t *serial_hub = (serial_hub_handle_t *)pvParameters;
 
   packet_time timepack = {
-      .unit_index = 1, .timestamp = get_time_micros(), .delta = 0};
+      .delta = 0, .timestamp = get_time_micros(), .unit_index = 1};
 
   serial_hub_write_topic(serial_hub, TIME_PACKET_ID, (uint8_t *)&timepack,
                          sizeof(timepack));

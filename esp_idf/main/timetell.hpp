@@ -5,9 +5,9 @@ void setup_time_tell_task();
 #define TIME_PACKET_ID 3
 
 typedef struct __attribute__((packed)) {
-  uint8_t unit_index;
-  uint64_t timestamp;
   uint64_t delta;
+  uint64_t timestamp;
+  uint8_t unit_index;
 } packet_time;
 
 uint64_t get_time_micros();
