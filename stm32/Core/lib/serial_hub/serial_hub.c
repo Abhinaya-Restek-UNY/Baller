@@ -155,8 +155,8 @@ inline fsize_t serial_hub_get_next_packet(uint8_t *currentCOB_byte,
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
-inline fsize_t serial_hub_start_reading(serial_hub_handle_t *handle,
-                                        uint8_t *start, uint8_t *end) {
+static inline fsize_t serial_hub_start_reading(serial_hub_handle_t *handle,
+                                               uint8_t *start, uint8_t *end) {
   fsize_t in_idx = 0;
   fsize_t in_len = end - start;
 
@@ -220,6 +220,7 @@ inline fsize_t serial_hub_start_reading(serial_hub_handle_t *handle,
     handle->__current_topic->callback(handle->__current_topic->ctx,
                                       handle->__read_buf,
                                       handle->__current_topic->expected_length);
+    memset(handle->__read_buf, 0, handle->__read_buf_size);
     handle->state = SERIAL_HUB_READ_STATE_EMPTY;
   }
 
