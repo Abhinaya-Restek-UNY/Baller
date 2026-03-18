@@ -1,4 +1,5 @@
 #include "baller_interfaces/srv/motor_parameter.hpp"
+#include <cmath>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <thread>
@@ -21,16 +22,10 @@ typedef struct __attribute__((packed)) {
 } packet_motor;
 
 typedef struct __attribute__((packed)) {
-  uint8_t unit_index;
   uint64_t timestamp;
-  uint64_t delta;
-} packet_time;
-
-typedef struct __attribute__((packed)) {
   int32_t revolutionA;
   int32_t revolutionB;
   int32_t revolutionC;
-  uint64_t timestamp;
 } packet_encoder;
 
 typedef struct __attribute__((packed)) {
@@ -43,6 +38,52 @@ typedef struct __attribute__((packed)) {
   int a_z;
   uint64_t timestamp;
 } packet_mpu;
+
+typedef struct __attribute__((packed)) {
+  uint64_t delta;
+  uint64_t timestamp;
+  uint8_t unit_index;
+} packet_time;
+
+#define TIME_WARM_UP_PACKET_TOTAL 5
+
+typedef struct {
+  double d_offset;
+  double d_drift;
+  uint64_t last_tick;
+  uint8_t state;
+  uint8_t total_packet;
+} time_sync_data;
+
+static inline double lpf(double prev, double current, double alpha) {
+  return (1 - alpha) * prev + alpha * current;
+};
+
+void update_time_sync(time_sync_data &data, packet_time *packet,
+                      uint64_t current) {
+  if (data.state == 0) {
+    data.d_offset = current - packet->timestamp;
+    data.last_tick = current;
+    data.state = 1;
+    return;
+  }
+  double delta = current - data.last_tick;
+  if (data.state == 1) {
+    data.d_drift = delta / packet->delta;
+    data.state = 2;
+  } else {
+    data.d_drift = lpf(data.d_drift, delta / packet->delta, 0.1);
+  }
+
+  data.d_offset =
+      lpf(data.d_offset, (current - packet->timestamp * data.d_drift), 0.1);
+  data.last_tick = current;
+};
+
+uint64_t sync_time(time_sync_data &data, uint64_t measured) {
+  return (uint64_t)std::round(data.d_offset +
+                              static_cast<double>(measured) * data.d_drift);
+};
 
 class BallerSerial : public rclcpp::Node {
 public:
@@ -64,13 +105,6 @@ public:
 
     serial_hub_initialize(&this->hub, this->write_to_serial, this);
     serial_hub_reserve_memory(&this->hub, sizeof(packet_mpu));
-
-    serial_hub_attach_topic(&this->hub, ENCODER_PACKET_ID,
-                            sizeof(packet_encoder), this,
-                            (on_receive_cb_t)on_receive_encoder);
-
-    serial_hub_attach_topic(&this->hub, MPU_PACKET_ID, sizeof(packet_mpu), this,
-                            (on_receive_cb_t)on_receive_mpu);
 
     serial_hub_attach_topic(&this->hub, TIME_PACKET_ID, sizeof(packet_time),
                             this, (on_receive_cb_t)on_receive_time);
@@ -137,27 +171,67 @@ private:
 
   static void on_receive_mpu(BallerSerial *_this, packet_mpu *packet,
                              fsize_t size) {
-    RCLCPP_INFO(
-        _this->get_logger(),
-        "Received mpu: accel(%4d, %4d, %4d) quatern(%.2f, %.2f, %.2f, %.2f)",
-        packet->a_x, packet->a_y, packet->a_z, packet->q_w, packet->q_x,
-        packet->q_y, packet->q_z);
+    packet->timestamp = sync_time(_this->esp32, packet->timestamp);
+    RCLCPP_INFO(_this->get_logger(),
+                "[%lu] Received mpu: accel(%4d, %4d, %4d) quatern(%.2f, %.2f,"
+                "%.2f, %.2f)",
+                packet->timestamp, packet->a_x, packet->a_y, packet->a_z,
+                packet->q_w, packet->q_x, packet->q_y, packet->q_z);
     // TODO: Integrate with ukf_localization_node and packet_time
   };
 
   static void on_receive_encoder(BallerSerial *_this, packet_encoder *packet,
                                  fsize_t size) {
 
-    RCLCPP_INFO(_this->get_logger(), "Received encoder: %d %d %d",
-                packet->revolutionA, packet->revolutionB, packet->revolutionC);
-    // TODO: Integrate with ukf_localization_node and packet_time
+    packet->timestamp = sync_time(_this->stm32, packet->timestamp);
+    RCLCPP_INFO(_this->get_logger(), "[%lu] Received encoder: %d %d %d",
+                packet->timestamp, packet->revolutionA, packet->revolutionB,
+                packet->revolutionC);
+    // // TODO: Integrate with ukf_localization_node and packet_time
   }
+
+  time_sync_data esp32;
+  time_sync_data stm32;
 
   static void on_receive_time(BallerSerial *_this, packet_time *packet,
                               fsize_t size) {
-    RCLCPP_INFO(_this->get_logger(),
-                "Received time: index(%d) timestamp(%lu) delta(%lu) ",
-                packet->unit_index, packet->timestamp, packet->delta);
+
+    uint64_t now = _this->get_clock()->now().nanoseconds() / 1000;
+    if (packet->unit_index == 1) {
+      update_time_sync(_this->esp32, packet, now);
+
+      if (_this->esp32.total_packet < TIME_WARM_UP_PACKET_TOTAL) {
+
+        _this->esp32.total_packet++;
+
+        RCLCPP_INFO(_this->get_logger(), "[%d/%d] ESP32 time sync warm up...",
+                    _this->esp32.total_packet, TIME_WARM_UP_PACKET_TOTAL);
+      }
+    }
+
+    if (packet->unit_index == 2) {
+      update_time_sync(_this->stm32, packet, now);
+
+      if (_this->stm32.total_packet < TIME_WARM_UP_PACKET_TOTAL) {
+        _this->stm32.total_packet++;
+        RCLCPP_INFO(_this->get_logger(), "[%d/%d] STM32 time sync warm up...",
+                    _this->stm32.total_packet, TIME_WARM_UP_PACKET_TOTAL);
+      }
+    }
+
+    if (_this->esp32.total_packet + _this->stm32.total_packet ==
+        TIME_WARM_UP_PACKET_TOTAL * 2) {
+      _this->esp32.total_packet++;
+      _this->stm32.total_packet++;
+
+      serial_hub_attach_topic(&_this->hub, ENCODER_PACKET_ID,
+                              sizeof(packet_encoder), _this,
+                              (on_receive_cb_t)on_receive_encoder);
+
+      RCLCPP_INFO(_this->get_logger(), "Booting up packet handler!");
+      serial_hub_attach_topic(&_this->hub, MPU_PACKET_ID, sizeof(packet_mpu),
+                              _this, (on_receive_cb_t)on_receive_mpu);
+    }
 
     // TODO: Create local time syncing mechanism to integrate with
     // ukf_localization_node
