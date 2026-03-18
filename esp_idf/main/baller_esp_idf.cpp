@@ -7,8 +7,8 @@
 #include "timetell.hpp"
 
 #define MPU_INT_PIN GPIO_NUM_19
-UART usb_io(400);
-UART stm32_io(400, UART_NUM_2);
+UART usb_io(2048);
+UART stm32_io(2048, UART_NUM_2);
 static serial_hub_handle_t serial_hub;
 
 void write_cb(UART *ser_port, uint8_t *data, fsize_t size) {
