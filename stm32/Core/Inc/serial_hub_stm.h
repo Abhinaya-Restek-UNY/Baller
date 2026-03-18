@@ -6,10 +6,10 @@
 #define MOTOR_PACKET_ID 4
 
 typedef struct {
+  uint64_t timestamp;
   int32_t revolutionA;
   int32_t revolutionB;
   int32_t revolutionC;
-  uint64_t timestamp;
 } packet_encoder_data;
 
 typedef struct {
