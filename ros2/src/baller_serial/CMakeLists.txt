@@ -11,6 +11,8 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(baller_interfaces REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
+find_package(nav_msgs REQUIRED)    
+find_package(sensor_msgs REQUIRED)
 
 add_subdirectory(lib/serial_hub)
 
@@ -33,6 +35,6 @@ target_link_libraries(baller_serial_node serial_hub)
 install(TARGETS baller_serial_node
   DESTINATION lib/${PROJECT_NAME})
 
-ament_target_dependencies(baller_serial_node rclcpp baller_interfaces)
+ament_target_dependencies(baller_serial_node rclcpp baller_interfaces nav_msgs sensor_msgs)
 
 ament_package()

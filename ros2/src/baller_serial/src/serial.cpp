@@ -7,6 +7,9 @@
 #include "boost/asio.hpp"
 #include "serial_hub.h"
 
+#include "nav_msgs/msg/odometry.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+
 #define ENCODER_PACKET_ID 1
 #define MPU_PACKET_ID 2
 #define TIME_PACKET_ID 3
@@ -23,9 +26,9 @@ typedef struct __attribute__((packed)) {
 
 typedef struct __attribute__((packed)) {
   uint64_t timestamp;
-  int32_t revolutionA;
-  int32_t revolutionB;
-  int32_t revolutionC;
+  int32_t deltaA;
+  int32_t deltaB;
+  int32_t deltaC;
 } packet_encoder;
 
 typedef struct __attribute__((packed)) {
@@ -58,6 +61,8 @@ typedef struct {
 static inline double lpf(double prev, double current, double alpha) {
   return (1 - alpha) * prev + alpha * current;
 };
+
+static double PI = std::acos(-1.0);
 
 void update_time_sync(time_sync_data &data, packet_time *packet,
                       uint64_t current) {
@@ -93,6 +98,18 @@ public:
 
     this->declare_parameter<std::string>("serial_port", "/dev/ttyUSB0");
     this->declare_parameter<int>("baud_rate", 115200);
+    this->track_width_mm =
+        this->declare_parameter<double>("track_width_mm", 14.0);
+
+    double wheel_diameter_mm =
+        this->declare_parameter<double>("wheel_diameter_mm", 55.0);
+
+    double encoder_ppr = this->declare_parameter<double>("encoder_ppr", 400.0);
+
+    this->encoder_resolution_dis =
+        (PI * wheel_diameter_mm) /
+        (encoder_ppr * 4 *
+         1000); // *4 because were counting A and B idk man. this is m/tick
 
     this->set_motor_service =
         this->create_service<baller_interfaces::srv::MotorParameter>(
@@ -113,7 +130,38 @@ public:
 
     this->asio_read_buf =
         (std::make_unique<uint8_t[]>(this->hub.__read_buf_size * 2));
+
+    odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
+    imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("imu/data", 10);
+
+    odom_msg_.header.frame_id = "odom";
+    odom_msg_.child_frame_id = "base_link";
+
+    // Set the covariance matrix once (assuming 0.01 variance for x, y, yaw)
+    odom_msg_.twist.covariance[0] = 0.01;  // X velocity
+    odom_msg_.twist.covariance[7] = 0.01;  // Y velocity
+    odom_msg_.twist.covariance[35] = 0.01; // Yaw velocity
+
+    imu_msg_.header.frame_id = "imu_link"; // Must match your TF tree
+
+    // 1. Orientation Covariance (Trust the DMP quaternion)
+    imu_msg_.orientation_covariance[0] = 0.001; // Roll variance
+    imu_msg_.orientation_covariance[4] = 0.001; // Pitch variance
+    imu_msg_.orientation_covariance[8] = 0.001; // Yaw variance
+
+    // 2. Linear Acceleration Covariance (Accelerometer noise)
+    imu_msg_.linear_acceleration_covariance[0] = 0.01; // X accel variance
+    imu_msg_.linear_acceleration_covariance[4] = 0.01; // Y accel variance
+    imu_msg_.linear_acceleration_covariance[8] = 0.01; // Z accel variance
+
+    // 3. Angular Velocity Covariance (Gyroscope)
+    // CRITICAL: Setting the first element to -1.0 is the standard ROS way to
+    // tell the EKF: "I am not providing this data, please ignore it."
+    imu_msg_.angular_velocity_covariance[0] = -1.0;
   }
+
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
 
   ~BallerSerial() {
     work_guard_.reset();
@@ -137,6 +185,12 @@ private:
   std::unique_ptr<uint8_t[]> asio_read_buf;
 
   serial_hub_handle_t hub;
+  // TODO: Use parameter.
+  double encoder_resolution_dis = 0.0;
+  double track_width_mm = 14;
+
+  nav_msgs::msg::Odometry odom_msg_;
+  sensor_msgs::msg::Imu imu_msg_;
 
   rclcpp::Service<baller_interfaces::srv::MotorParameter>::SharedPtr
       set_motor_service;
@@ -169,29 +223,67 @@ private:
                                                 << size << " byte packet.");
   };
 
+  double accel_resolution = 9.80665 / 16384.0;
+
   static void on_receive_mpu(BallerSerial *_this, packet_mpu *packet,
                              fsize_t size) {
     packet->timestamp = sync_time(_this->esp32, packet->timestamp);
-    RCLCPP_INFO(_this->get_logger(),
-                "[%lu] Received mpu: accel(%4d, %4d, %4d) quatern(%.2f, %.2f,"
-                "%.2f, %.2f)",
-                packet->timestamp, packet->a_x, packet->a_y, packet->a_z,
-                packet->q_w, packet->q_x, packet->q_y, packet->q_z);
-    // TODO: Integrate with ukf_localization_node and packet_time
+
+    _this->imu_msg_.header.stamp.sec = packet->timestamp / 1000000;
+    _this->imu_msg_.header.stamp.nanosec = (packet->timestamp % 1000000) * 1000;
+
+    _this->imu_msg_.linear_acceleration.x =
+        packet->a_x * _this->accel_resolution;
+    _this->imu_msg_.linear_acceleration.y =
+        packet->a_y * _this->accel_resolution;
+    _this->imu_msg_.linear_acceleration.z =
+        packet->a_z * _this->accel_resolution;
+
+    _this->imu_msg_.orientation.x = packet->q_x;
+    _this->imu_msg_.orientation.y = packet->q_y;
+    _this->imu_msg_.orientation.z = packet->q_z;
+    _this->imu_msg_.orientation.w = packet->q_w;
+
+    _this->imu_pub_->publish(_this->imu_msg_);
   };
 
   static void on_receive_encoder(BallerSerial *_this, packet_encoder *packet,
                                  fsize_t size) {
 
     packet->timestamp = sync_time(_this->stm32, packet->timestamp);
-    RCLCPP_INFO(_this->get_logger(), "[%lu] Received encoder: %d %d %d",
-                packet->timestamp, packet->revolutionA, packet->revolutionB,
-                packet->revolutionC);
-    // // TODO: Integrate with ukf_localization_node and packet_time
+    double delta_us =
+        packet->timestamp - _this->last_encoder; // Delta in microseconds
+    _this->last_encoder = packet->timestamp;
+
+    if (delta_us <= 0.0) {
+      return;
+    }
+    double delta_sec = delta_us / 1000000.0;
+
+    _this->odom_msg_.header.stamp.sec = packet->timestamp / 1000000;
+    _this->odom_msg_.header.stamp.nanosec =
+        (packet->timestamp % 1000000) * 1000;
+
+    _this->odom_msg_.twist.twist.angular.z =
+        (((packet->deltaA - packet->deltaC) * _this->encoder_resolution_dis) /
+         _this->track_width_mm) /
+        delta_sec;
+
+    _this->odom_msg_.twist.twist.linear.x =
+        (((double)packet->deltaB * _this->encoder_resolution_dis) / delta_sec);
+
+    _this->odom_msg_.twist.twist.linear.y =
+        (((packet->deltaA + packet->deltaC) * _this->encoder_resolution_dis) /
+         2.0) /
+        delta_sec;
+
+    _this->odom_pub_->publish(_this->odom_msg_);
   }
 
   time_sync_data esp32;
   time_sync_data stm32;
+  uint64_t last_encoder = 0;
+  uint64_t last_imu = 0;
 
   static void on_receive_time(BallerSerial *_this, packet_time *packet,
                               fsize_t size) {
@@ -221,9 +313,9 @@ private:
 
     if (_this->esp32.total_packet + _this->stm32.total_packet ==
         TIME_WARM_UP_PACKET_TOTAL * 2) {
-      _this->esp32.total_packet++;
-      _this->stm32.total_packet++;
 
+      _this->last_encoder = now;
+      _this->last_imu = now;
       serial_hub_attach_topic(&_this->hub, ENCODER_PACKET_ID,
                               sizeof(packet_encoder), _this,
                               (on_receive_cb_t)on_receive_encoder);
@@ -231,6 +323,8 @@ private:
       RCLCPP_INFO(_this->get_logger(), "Booting up packet handler!");
       serial_hub_attach_topic(&_this->hub, MPU_PACKET_ID, sizeof(packet_mpu),
                               _this, (on_receive_cb_t)on_receive_mpu);
+      _this->esp32.total_packet++;
+      _this->stm32.total_packet++;
     }
 
     // TODO: Create local time syncing mechanism to integrate with
