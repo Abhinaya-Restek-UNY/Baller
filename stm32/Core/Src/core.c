@@ -75,11 +75,12 @@ uint16_t encoder_prev_b = 0;
 uint16_t encoder_prev_c = 0;
 packet_encoder encoder_data = {0, 0, 0, 0};
 
-static inline void update_encoder(int32_t *revolution, uint16_t *previous,
-								  TIM_HandleTypeDef *enc) {
+static inline int32_t update_encoder(uint16_t *previous,
+									 TIM_HandleTypeDef *enc) {
 	uint16_t current = __HAL_TIM_GET_COUNTER(enc);
-	*revolution += (int16_t)(current - *previous);
+	int16_t delta = (int16_t)(current - *previous);
 	*previous = current;
+	return delta;
 };
 
 uint8_t blink_count = 0;
@@ -99,9 +100,9 @@ void loop() {
 							   (uint8_t *)&time_packet, sizeof(packet_time));
 	}
 
-	update_encoder(&encoder_data.revolutionA, &encoder_prev_a, &htim3);
-	update_encoder(&encoder_data.revolutionB, &encoder_prev_b, &htim4);
-	update_encoder(&encoder_data.revolutionC, &encoder_prev_c, &htim8);
+	encoder_data.deltaA = update_encoder(&encoder_prev_a, &htim3);
+	encoder_data.deltaB = update_encoder(&encoder_prev_b, &htim4);
+	encoder_data.deltaC = update_encoder(&encoder_prev_c, &htim8);
 
 	serial_hub_write_topic(&uart_hub, ENCODER_PACKET_ID,
 						   (uint8_t *)&encoder_data, sizeof(packet_encoder));
