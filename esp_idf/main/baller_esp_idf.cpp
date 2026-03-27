@@ -6,7 +6,7 @@
 #include "stm32_forward.hpp"
 #include "timetell.hpp"
 
-#define MPU_INT_PIN GPIO_NUM_19
+#define MPU_INT_PIN GPIO_NUM_13
 UART usb_io(2048);
 UART stm32_io(2048, UART_NUM_2);
 static serial_hub_handle_t serial_hub;
@@ -41,16 +41,14 @@ extern "C" void app_main(void) {
   }
 
   blink_once();
-  //
+
   serial_hub_initialize(&serial_hub, (write_cb_t)write_cb, &usb_io);
   serial_hub_reserve_memory(&serial_hub, sizeof(packet_mpu));
-  //
-  if (setup_mpu6050_interrupt(&serial_hub, GPIO_NUM_19)) {
+
+  if (setup_mpu6050_interrupt(&serial_hub, MPU_INT_PIN)) {
     blink_fatal();
   }
-  //
-  // blink_once();
-  //
+
   start_telling_time(&serial_hub);
   stm32_forward_setup(&usb_io, &stm32_io);
   while (1) {
