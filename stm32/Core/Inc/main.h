@@ -1,21 +1,21 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.h
-  * @brief          : Header for main.c file.
-  *                   This file contains the common defines of the application.
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.h
+ * @brief          : Header for main.c file.
+ *                   This file contains the common defines of the application.
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 
 /* Define to prevent recursive inclusion -------------------------------------*/
@@ -63,10 +63,6 @@ void Error_Handler(void);
 #define PWM1_GPIO_Port GPIOE
 #define PWM2_Pin GPIO_PIN_6
 #define PWM2_GPIO_Port GPIOE
-#define ENC1A_Pin GPIO_PIN_0
-#define ENC1A_GPIO_Port GPIOA
-#define ENC1B_Pin GPIO_PIN_1
-#define ENC1B_GPIO_Port GPIOA
 #define Motor1B_Pin GPIO_PIN_4
 #define Motor1B_GPIO_Port GPIOA
 #define Motor1A_Pin GPIO_PIN_5
@@ -89,6 +85,10 @@ void Error_Handler(void);
 #define ENC3A_GPIO_Port GPIOD
 #define ENC3B_Pin GPIO_PIN_13
 #define ENC3B_GPIO_Port GPIOD
+#define ENC1A_Pin GPIO_PIN_6
+#define ENC1A_GPIO_Port GPIOC
+#define ENC1B_Pin GPIO_PIN_7
+#define ENC1B_GPIO_Port GPIOC
 #define ENC2A_Pin GPIO_PIN_4
 #define ENC2A_GPIO_Port GPIOB
 #define ENC2B_Pin GPIO_PIN_5
@@ -100,6 +100,16 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN Private defines */
 
+extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim3;
+extern TIM_HandleTypeDef htim4;
+extern TIM_HandleTypeDef htim8;
+extern TIM_HandleTypeDef htim9;
+extern TIM_HandleTypeDef htim11;
+extern TIM_HandleTypeDef htim12;
+
+extern UART_HandleTypeDef huart2;
+extern DMA_HandleTypeDef hdma_usart2_rx;
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

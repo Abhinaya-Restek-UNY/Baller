@@ -51,6 +51,7 @@ add_subdirectory(Core/lib/serial_hub)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     # ${USER_SOURCES}
+    Core/Src/core.c
 )
 
 # Add include paths
