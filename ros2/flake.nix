@@ -37,6 +37,9 @@
                   python-cmake-module
                   rosidl-default-generators
                   rosidl-default-runtime
+                  robot-localization
+                  tf2-tools
+                  rviz2
                   # ... other ROS packages
                 ];
               }
