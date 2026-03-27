@@ -14,9 +14,9 @@ typedef struct __attribute__((packed)) {
 
 typedef struct __attribute__((packed)) {
 	uint64_t timestamp;
-	int32_t revolutionA;
-	int32_t revolutionB;
-	int32_t revolutionC;
+	int32_t deltaA;
+	int32_t deltaB;
+	int32_t deltaC;
 } packet_encoder;
 
 typedef struct {
