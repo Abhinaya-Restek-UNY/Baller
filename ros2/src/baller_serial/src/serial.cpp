@@ -1,115 +1,30 @@
+#include "AsioSerialHub.hpp"
+#include "Timesync.hpp"
 #include "baller_interfaces/srv/motor_parameter.hpp"
-#include <cmath>
-#include <memory>
 #include <rclcpp/rclcpp.hpp>
-#include <thread>
 
 #include "boost/asio.hpp"
-#include "serial_hub.h"
+#include "packet_types.h"
 
+#include "RobotLocalizationBridge.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 
-#define ENCODER_PACKET_ID 1
-#define MPU_PACKET_ID 2
-#define TIME_PACKET_ID 3
-#define MOTOR_PACKET_ID 4
 using namespace std::chrono_literals;
-typedef int16_t motor_direction_t;
-
-typedef struct __attribute__((packed)) {
-  motor_direction_t front_right;
-  motor_direction_t front_left;
-  motor_direction_t back_right;
-  motor_direction_t back_left;
-} packet_motor;
-
-typedef struct __attribute__((packed)) {
-  uint64_t timestamp;
-  int32_t deltaA;
-  int32_t deltaB;
-  int32_t deltaC;
-} packet_encoder;
-
-typedef struct __attribute__((packed)) {
-  float q_w;
-  float q_x;
-  float q_y;
-  float q_z;
-  int a_x;
-  int a_y;
-  int a_z;
-  uint64_t timestamp;
-} packet_mpu;
-
-typedef struct __attribute__((packed)) {
-  uint64_t delta;
-  uint64_t timestamp;
-  uint8_t unit_index;
-} packet_time;
-
-#define TIME_WARM_UP_PACKET_TOTAL 5
-
-typedef struct {
-  double d_offset;
-  double d_drift;
-  uint64_t last_tick;
-  uint8_t state;
-  uint8_t total_packet;
-} time_sync_data;
-
-static inline double lpf(double prev, double current, double alpha) {
-  return (1 - alpha) * prev + alpha * current;
-};
-
-static double PI = std::acos(-1.0);
-
-void update_time_sync(time_sync_data &data, packet_time *packet,
-                      uint64_t current) {
-  if (data.state == 0) {
-    data.d_offset = current - packet->timestamp;
-    data.last_tick = current;
-    data.state = 1;
-    return;
-  }
-  double delta = current - data.last_tick;
-  if (data.state == 1) {
-    data.d_drift = delta / packet->delta;
-    data.state = 2;
-  } else {
-    data.d_drift = lpf(data.d_drift, delta / packet->delta, 0.1);
-  }
-
-  data.d_offset =
-      lpf(data.d_offset, (current - packet->timestamp * data.d_drift), 0.1);
-  data.last_tick = current;
-};
-
-uint64_t sync_time(time_sync_data &data, uint64_t measured) {
-  return (uint64_t)std::round(data.d_offset +
-                              static_cast<double>(measured) * data.d_drift);
-};
 
 class BallerSerial : public rclcpp::Node {
 public:
   BallerSerial()
-      : Node("baller_serial"), serial_io_port(this->serial_io_context),
-        work_guard_(boost::asio::make_work_guard(this->serial_io_context)) {
-
-    this->declare_parameter<std::string>("serial_port", "/dev/ttyUSB0");
-    this->declare_parameter<int>("baud_rate", 115200);
-    this->track_width_mm =
-        this->declare_parameter<double>("track_width_mm", 14.0);
-
-    double wheel_diameter_mm =
-        this->declare_parameter<double>("wheel_diameter_mm", 55.0);
-
-    double encoder_ppr = this->declare_parameter<double>("encoder_ppr", 400.0);
-
-    this->encoder_resolution_dis =
-        (PI * wheel_diameter_mm) /
-        (encoder_ppr * 4 *
-         1000); // *4 because were counting A and B idk man. this is m/tick
+      : Node("baller_serial"),
+        robotLocalizationBridge(
+            this->declare_parameter<double>("track_width_mm", 14.0),
+            this->declare_parameter<double>("wheel_diameter_mm", 55.0),
+            this->declare_parameter<double>("encoder_ppr", 400.0)),
+        serial(
+            this->declare_parameter<std::string>("serial_port", "/dev/ttyUSB0"),
+            this->declare_parameter<int>("baud_rate", 115200),
+            sizeof(packet_mpu), this->get_logger()),
+        timesync(this->get_logger()) {
 
     this->set_motor_service =
         this->create_service<baller_interfaces::srv::MotorParameter>(
@@ -118,280 +33,74 @@ public:
                       std::placeholders::_1, std::placeholders::_2));
 
     this->serial_io_port_reconnect_timer = this->create_wall_timer(
-        3s, std::bind(&BallerSerial::connect_to_serial, this));
+        3s, std::bind(&AsioSerialHub::connect, &this->serial));
 
-    serial_hub_initialize(&this->hub, this->write_to_serial, this);
-    serial_hub_reserve_memory(&this->hub, sizeof(packet_mpu));
-
-    serial_hub_attach_topic(&this->hub, TIME_PACKET_ID, sizeof(packet_time),
-                            this, (on_receive_cb_t)on_receive_time);
-
-    asio_thread = std::thread([this]() { this->serial_io_context.run(); });
-
-    this->asio_read_buf =
-        (std::make_unique<uint8_t[]>(this->hub.__read_buf_size * 2));
+    this->serial.attach<packet_time, BallerSerial>(TIME_PACKET_ID, this,
+                                                   on_receive_time);
 
     odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
     imu_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("imu/data", 10);
-
-    odom_msg_.header.frame_id = "odom";
-    odom_msg_.child_frame_id = "base_link";
-
-    // Set the covariance matrix once (assuming 0.01 variance for x, y, yaw)
-    odom_msg_.twist.covariance[0] = 0.01;  // X velocity
-    odom_msg_.twist.covariance[7] = 0.01;  // Y velocity
-    odom_msg_.twist.covariance[35] = 0.01; // Yaw velocity
-
-    imu_msg_.header.frame_id = "imu_link"; // Must match your TF tree
-
-    // 1. Orientation Covariance (Trust the DMP quaternion)
-    imu_msg_.orientation_covariance[0] = 0.001; // Roll variance
-    imu_msg_.orientation_covariance[4] = 0.001; // Pitch variance
-    imu_msg_.orientation_covariance[8] = 0.001; // Yaw variance
-
-    // 2. Linear Acceleration Covariance (Accelerometer noise)
-    imu_msg_.linear_acceleration_covariance[0] = 0.01; // X accel variance
-    imu_msg_.linear_acceleration_covariance[4] = 0.01; // Y accel variance
-    imu_msg_.linear_acceleration_covariance[8] = 0.01; // Z accel variance
-
-    // 3. Angular Velocity Covariance (Gyroscope)
-    // CRITICAL: Setting the first element to -1.0 is the standard ROS way to
-    // tell the EKF: "I am not providing this data, please ignore it."
-    imu_msg_.angular_velocity_covariance[0] = -1.0;
+    this->robotLocalizationBridge.set_publisher(odom_pub_, imu_pub_);
   }
 
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
-
-  ~BallerSerial() {
-    work_guard_.reset();
-    serial_io_context.stop();
-    if (asio_thread.joinable()) {
-      asio_thread.join();
-    }
-  }
+  ~BallerSerial() {}
 
 private:
-  boost::asio::io_context serial_io_context;
-  boost::asio::serial_port serial_io_port;
-
-  boost::asio::executor_work_guard<boost::asio::io_context::executor_type>
-      work_guard_;
-
-  std::thread asio_thread;
-
+  RobotLocalizationBridge robotLocalizationBridge;
+  AsioSerialHub serial;
+  Timesync timesync;
   rclcpp::TimerBase::SharedPtr serial_io_port_reconnect_timer;
-
-  std::unique_ptr<uint8_t[]> asio_read_buf;
-
-  serial_hub_handle_t hub;
-  // TODO: Use parameter.
-  double encoder_resolution_dis = 0.0;
-  double track_width_mm = 14;
-
-  nav_msgs::msg::Odometry odom_msg_;
-  sensor_msgs::msg::Imu imu_msg_;
-
   rclcpp::Service<baller_interfaces::srv::MotorParameter>::SharedPtr
       set_motor_service;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
 
   void handle_set_motor_request(
       const std::shared_ptr<baller_interfaces::srv::MotorParameter::Request>
           request,
       std::shared_ptr<baller_interfaces::srv::MotorParameter::Response>
           response) {
-    if (!this->serial_io_port.is_open()) {
+    if (!this->serial.is_open()) {
       response->success = false;
       return; // Stop right here
     }
-    packet_motor cmd = {.front_right = request->front_right,
-                        .front_left = request->front_left,
-                        .back_right = request->back_right,
-                        .back_left = request->back_left};
-    serial_hub_write_topic(&this->hub, MOTOR_PACKET_ID, (uint8_t *)&cmd,
-                           sizeof(packet_motor));
+    packet_motor cmd = {};
+    cmd.front_right = request->front_right;
+    cmd.front_left = request->front_left;
+    cmd.back_right = request->back_right;
+    cmd.back_left = request->back_left;
+
+    this->serial.write<packet_motor>(MOTOR_PACKET_ID, &cmd);
+
     response->success = true;
   }
-  static void write_to_serial(void *ctx, uint8_t *data, fsize_t size) {
-    BallerSerial *_this = (BallerSerial *)ctx;
-    if (_this->serial_io_port.is_open()) {
-      _this->serial_io_port.write_some(boost::asio::buffer(data, size));
-      return;
-    }
 
-    RCLCPP_WARN_STREAM(_this->get_logger(), "Serial port is not open. dropping "
-                                                << size << " byte packet.");
-  };
-
-  double accel_resolution = 9.80665 / 16384.0;
-
-  static void on_receive_mpu(BallerSerial *_this, packet_mpu *packet,
-                             fsize_t size) {
-    packet->timestamp = sync_time(_this->esp32, packet->timestamp);
-
-    _this->imu_msg_.header.stamp.sec = packet->timestamp / 1000000;
-    _this->imu_msg_.header.stamp.nanosec = (packet->timestamp % 1000000) * 1000;
-
-    _this->imu_msg_.linear_acceleration.x =
-        packet->a_x * _this->accel_resolution;
-    _this->imu_msg_.linear_acceleration.y =
-        packet->a_y * _this->accel_resolution;
-    _this->imu_msg_.linear_acceleration.z =
-        packet->a_z * _this->accel_resolution;
-
-    _this->imu_msg_.orientation.x = packet->q_x;
-    _this->imu_msg_.orientation.y = packet->q_y;
-    _this->imu_msg_.orientation.z = packet->q_z;
-    _this->imu_msg_.orientation.w = packet->q_w;
-
-    _this->imu_pub_->publish(_this->imu_msg_);
+  static void on_receive_mpu(BallerSerial *_this, packet_mpu *packet, fsize_t) {
+    packet->timestamp = _this->timesync.sync_esp32_time(packet->timestamp);
+    _this->robotLocalizationBridge.process_mpu_packet(packet);
   };
 
   static void on_receive_encoder(BallerSerial *_this, packet_encoder *packet,
-                                 fsize_t size) {
-
-    packet->timestamp = sync_time(_this->stm32, packet->timestamp);
-    double delta_us =
-        packet->timestamp - _this->last_encoder; // Delta in microseconds
-    _this->last_encoder = packet->timestamp;
-
-    if (delta_us <= 0.0) {
-      return;
-    }
-    double delta_sec = delta_us / 1000000.0;
-
-    _this->odom_msg_.header.stamp.sec = packet->timestamp / 1000000;
-    _this->odom_msg_.header.stamp.nanosec =
-        (packet->timestamp % 1000000) * 1000;
-
-    _this->odom_msg_.twist.twist.angular.z =
-        (((packet->deltaA - packet->deltaC) * _this->encoder_resolution_dis) /
-         _this->track_width_mm) /
-        delta_sec;
-
-    _this->odom_msg_.twist.twist.linear.x =
-        (((double)packet->deltaB * _this->encoder_resolution_dis) / delta_sec);
-
-    _this->odom_msg_.twist.twist.linear.y =
-        (((packet->deltaA + packet->deltaC) * _this->encoder_resolution_dis) /
-         2.0) /
-        delta_sec;
-
-    _this->odom_pub_->publish(_this->odom_msg_);
+                                 fsize_t) {
+    packet->timestamp = _this->timesync.sync_stm32_time(packet->timestamp);
+    _this->robotLocalizationBridge.process_encoder_packet(packet);
   }
-
-  time_sync_data esp32;
-  time_sync_data stm32;
-  uint64_t last_encoder = 0;
-  uint64_t last_imu = 0;
 
   static void on_receive_time(BallerSerial *_this, packet_time *packet,
-                              fsize_t size) {
+                              fsize_t) {
 
     uint64_t now = _this->get_clock()->now().nanoseconds() / 1000;
-    if (packet->unit_index == 1) {
-      update_time_sync(_this->esp32, packet, now);
 
-      if (_this->esp32.total_packet < TIME_WARM_UP_PACKET_TOTAL) {
+    if (_this->timesync.process_time_packet(packet, now)) {
+      _this->robotLocalizationBridge.last_encoder = now;
 
-        _this->esp32.total_packet++;
+      _this->serial.attach<packet_encoder, BallerSerial>(
+          ENCODER_PACKET_ID, _this, on_receive_encoder);
 
-        RCLCPP_INFO(_this->get_logger(), "[%d/%d] ESP32 time sync warm up...",
-                    _this->esp32.total_packet, TIME_WARM_UP_PACKET_TOTAL);
-      }
+      _this->serial.attach<packet_mpu, BallerSerial>(MPU_PACKET_ID, _this,
+                                                     on_receive_mpu);
     }
-
-    if (packet->unit_index == 2) {
-      update_time_sync(_this->stm32, packet, now);
-
-      if (_this->stm32.total_packet < TIME_WARM_UP_PACKET_TOTAL) {
-        _this->stm32.total_packet++;
-        RCLCPP_INFO(_this->get_logger(), "[%d/%d] STM32 time sync warm up...",
-                    _this->stm32.total_packet, TIME_WARM_UP_PACKET_TOTAL);
-      }
-    }
-
-    if (_this->esp32.total_packet + _this->stm32.total_packet ==
-        TIME_WARM_UP_PACKET_TOTAL * 2) {
-
-      _this->last_encoder = now;
-      _this->last_imu = now;
-      serial_hub_attach_topic(&_this->hub, ENCODER_PACKET_ID,
-                              sizeof(packet_encoder), _this,
-                              (on_receive_cb_t)on_receive_encoder);
-
-      RCLCPP_INFO(_this->get_logger(), "Booting up packet handler!");
-      serial_hub_attach_topic(&_this->hub, MPU_PACKET_ID, sizeof(packet_mpu),
-                              _this, (on_receive_cb_t)on_receive_mpu);
-      _this->esp32.total_packet++;
-      _this->stm32.total_packet++;
-    }
-
-    // TODO: Create local time syncing mechanism to integrate with
-    // ukf_localization_node
   }
-  void receive_loop() {
-    this->serial_io_port.async_read_some(
-        boost::asio::buffer(this->asio_read_buf.get(),
-                            this->hub.__read_buf_size * 2),
-        [this](const boost::system::error_code &error,
-               std::size_t bytes_transferred) {
-          if (!error) {
-            serial_hub_on_read(&this->hub, this->asio_read_buf.get(),
-                               bytes_transferred);
-
-            receive_loop();
-
-          } else {
-            RCLCPP_ERROR(this->get_logger(), "Serial read error: %s",
-                         error.message().c_str());
-
-            boost::system::error_code ec;
-            this->serial_io_port.close(ec);
-
-            RCLCPP_INFO(this->get_logger(),
-                        "Port closed. Reconnection timer will take over.");
-          }
-        });
-  };
-
-  int8_t connect_to_serial() {
-    if (this->serial_io_port.is_open()) {
-      return 0;
-    }
-    std::string port_name = this->get_parameter("serial_port").as_string();
-    uint32_t baud_rate = this->get_parameter("baud_rate").as_int();
-    RCLCPP_INFO(this->get_logger(), "Connecting to %s with %d baud rate...",
-                port_name.c_str(), baud_rate);
-    try {
-
-      this->serial_io_port.open(port_name);
-
-      this->serial_io_port.set_option(
-          boost::asio::serial_port_base::baud_rate(baud_rate));
-
-      this->serial_io_port.set_option(
-          boost::asio::serial_port_base::character_size(8));
-
-      this->serial_io_port.set_option(boost::asio::serial_port_base::parity(
-          boost::asio::serial_port_base::parity::none));
-      this->serial_io_port.set_option(boost::asio::serial_port_base::stop_bits(
-          boost::asio::serial_port_base::stop_bits::one));
-      this->serial_io_port.set_option(
-          boost::asio::serial_port_base::flow_control(
-              boost::asio::serial_port_base::flow_control::none));
-
-      RCLCPP_INFO(this->get_logger(), "Successfully connected to serial.");
-      receive_loop();
-      return 0;
-    } catch (const boost::system::system_error &e) {
-      RCLCPP_WARN(this->get_logger(),
-                  "%s\nFailed to connect to serial. will retry in 2 seconds...",
-                  e.what());
-
-      return -1;
-    }
-  };
 };
 
 int main(int argc, char *argv[]) {

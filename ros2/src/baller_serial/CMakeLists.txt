@@ -17,6 +17,7 @@ find_package(sensor_msgs REQUIRED)
 add_subdirectory(lib/serial_hub)
 
 
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
@@ -31,6 +32,7 @@ endif()
 
 add_executable(baller_serial_node src/serial.cpp)
 target_link_libraries(baller_serial_node serial_hub)
+target_include_directories(baller_serial_node PRIVATE include/baller_serial)
 
 install(TARGETS baller_serial_node
   DESTINATION lib/${PROJECT_NAME})
