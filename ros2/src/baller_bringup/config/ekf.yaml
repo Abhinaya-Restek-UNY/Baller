@@ -1,0 +1,65 @@
+### robot_localization EKF Configuration ###
+ekf_filter_node:
+  ros__parameters:
+    # How often to update the filter (Hz)
+    frequency: 50.0
+
+    # How long to wait for a sensor before ignoring it (seconds)
+    sensor_timeout: 0.1
+
+    # Since your robot is on a floor, we lock Z, Roll, and Pitch
+    two_d_mode: true
+
+    # Frame setup
+    map_frame: map              # Global frame
+    odom_frame: odom            # Local odometry frame (published by EKF)
+    base_link_frame: base_link  # The center of your robot
+    world_frame: odom           # We are fusing into the odom frame
+
+    # -----------------------------------------------------------------------
+    # ODOMETRY (From your wheel encoders)
+    # Topic: /odom
+    # -----------------------------------------------------------------------
+    odom0: odom
+    # Matrix: [X, Y, Z, 
+    #          roll, pitch, yaw, 
+    #          vX, vY, vZ, 
+    #          vroll, vpitch, vyaw, 
+    #          aX, aY, aZ]
+    odom0_config: [false, false, false, 
+                   false, false, false, 
+                   true,  true,  false,   # Trust vX (Forward) and vY (Strafe)
+                   false, false, true,    # Trust vyaw (Wheel rotation rate)
+                   false, false, false]
+    
+    odom0_queue_size: 10
+    odom0_differential: false
+    odom0_relative: false
+
+    # -----------------------------------------------------------------------
+    # IMU (From your MPU6050)
+    # Topic: /imu/data
+    # -----------------------------------------------------------------------
+    imu0: imu/data
+    imu0_config: [false, false, false, 
+                  true,  true,  true,    # Trust Absolute Orientation (DMP)
+                  false, false, false, 
+                  false, false, false, 
+                  true,  true,  true]    # Trust Linear Acceleration (aaReal)
+
+    imu0_queue_size: 10
+    imu0_differential: false
+    
+    # Start the robot at 0 yaw regardless of its physical orientation
+    imu0_relative: true 
+
+    # CRITICAL: You are using aaReal (gravity-removed), so set this to false!
+    imu0_remove_gravitational_acceleration: false
+
+    # -----------------------------------------------------------------------
+    # COVARIANCE (The "Trust" factor)
+    # -----------------------------------------------------------------------
+    # If the robot "drifts" too much in the simulation, we can tune these
+    process_noise_covariance: [0.05, 0.05, 0.05, 0.03, 0.03, 0.06, 
+                               0.025, 0.025, 0.025, 0.01, 0.01, 0.02, 
+                               0.01, 0.01, 0.01]
