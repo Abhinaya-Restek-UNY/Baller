@@ -7,13 +7,9 @@
 #include <memory>
 
 static void IRAM_ATTR gpio_isr_handler(void *arg) {
-
-  // Notify the task that an interrupt happened.
-  // We use "FromISR" version because we are inside an interrupt.
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   vTaskNotifyGiveFromISR(mpuTaskHandle, &xHigherPriorityTaskWoken);
 
-  // If the task we woke up is high priority, switch to it immediately.
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
@@ -111,13 +107,15 @@ int8_t setup_mpu6050(gpio_num_t SCL, gpio_num_t SDA) {
   mpu->initialize();
 
   uint8_t devStatus = mpu->dmpInitialize();
-  mpu->setXAccelOffset(-2407);
-  mpu->setYAccelOffset(1065);
-  mpu->setZAccelOffset(1681);
-  mpu->setXGyroOffset(33);
-  mpu->setYGyroOffset(-2);
-  mpu->setZGyroOffset(-17);
+  // mpu->setXAccelOffset(-2407);
+  // mpu->setYAccelOffset(1065);
+  // mpu->setZAccelOffset(1681);
+  // mpu->setXGyroOffset(33);
+  // mpu->setYGyroOffset(-2);
+  // mpu->setZGyroOffset(-17);
 
+  mpu->CalibrateGyro(6);
+  mpu->CalibrateAccel(6);
   if (devStatus == 0) {
 
     mpu->setDMPEnabled(true);
