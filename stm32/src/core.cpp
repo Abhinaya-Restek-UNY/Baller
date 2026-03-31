@@ -1,49 +1,52 @@
-#include "core.h"
-#include "serial_hub.h"
+#include "core.hpp"
 #include "stm32f4xx_hal_gpio.h"
 #include "stm32f4xx_hal_tim.h"
+#include "tim.h"
+#include "usart.h"
 
-motor_handle_t motor_fr = {.GPIOx_in1 = Motor1A_GPIO_Port,
-						   .GPIOx_in2 = Motor1B_GPIO_Port,
-						   .pin_in1 = Motor1A_Pin,
-						   .pin_in2 = Motor1B_Pin,
-						   .htim = &htim9,
-						   .channel = TIM_CHANNEL_1
-
-};
-motor_handle_t motor_fl = {.GPIOx_in1 = Motor2A_GPIO_Port,
-						   .GPIOx_in2 = Motor2B_GPIO_Port,
-						   .pin_in1 = Motor2A_Pin,
-						   .pin_in2 = Motor2B_Pin,
-						   .htim = &htim9,
-						   .channel = TIM_CHANNEL_2
+motor_handle_t motor_fl = {
+	.htim = &htim9,
+	.channel = TIM_CHANNEL_1,
+	.GPIOx_in1 = Motor1A_GPIO_Port,
+	.pin_in1 = Motor1A_Pin,
+	.GPIOx_in2 = Motor1B_GPIO_Port,
+	.pin_in2 = Motor1B_Pin,
 
 };
-motor_handle_t motor_br = {.GPIOx_in1 = Motor3A_GPIO_Port,
-						   .GPIOx_in2 = Motor3B_GPIO_Port,
-						   .pin_in1 = Motor3A_Pin,
-						   .pin_in2 = Motor3B_Pin,
-						   .htim = &htim11,
-						   .channel = TIM_CHANNEL_1
+motor_handle_t motor_br = {
+	.htim = &htim9,
+	.channel = TIM_CHANNEL_2,
+	.GPIOx_in1 = Motor2A_GPIO_Port,
+	.pin_in1 = Motor2A_Pin,
+	.GPIOx_in2 = Motor2B_GPIO_Port,
+	.pin_in2 = Motor2B_Pin,
 
 };
-motor_handle_t motor_bl = {.GPIOx_in1 = Motor4A_GPIO_Port,
-						   .GPIOx_in2 = Motor4B_GPIO_Port,
-						   .pin_in1 = Motor4A_Pin,
-						   .pin_in2 = Motor4B_Pin,
-						   .htim = &htim12,
-						   .channel = TIM_CHANNEL_2
+motor_handle_t motor_fr = {
+	.htim = &htim10,
+	.channel = TIM_CHANNEL_1,
+	.GPIOx_in1 = Motor3A_GPIO_Port,
+	.pin_in1 = Motor3A_Pin,
+	.GPIOx_in2 = Motor3B_GPIO_Port,
+	.pin_in2 = Motor3B_Pin,
+
+};
+motor_handle_t motor_bl = {
+	.htim = &htim12,
+	.channel = TIM_CHANNEL_2,
+	.GPIOx_in1 = Motor4A_GPIO_Port,
+	.pin_in1 = Motor4A_Pin,
+	.GPIOx_in2 = Motor4B_GPIO_Port,
+	.pin_in2 = Motor4B_Pin,
 
 };
 
 static serial_hub_handle_t uart_hub;
-
 static uint32_t timer_overflow_count = 0;
-
 static uint8_t dma_rx_buf[512 * 2];
-
 static uint64_t last_time = 0;
-static packet_time time_packet = {.timestamp = 0, .delta = 0, .unit_index = 2};
+static packet_time time_packet = {.delta = 0, .timestamp = 0, .unit_index = 2};
+
 void setup() {
 	time_packet.unit_index = 2;
 
@@ -83,14 +86,14 @@ static inline int32_t update_encoder(uint16_t *previous,
 	return delta;
 };
 
-uint8_t blink_count = 0;
+// uint8_t blink_count = 0;
 
 void loop() {
-	blink_count++;
-	if ((blink_count % 15) == 0) {
-		blink_count = 0;
-		HAL_GPIO_TogglePin(LED_BUILTIN_GPIO_Port, LED_BUILTIN_Pin);
-	}
+	// blink_count++;
+	// if ((blink_count % 15) == 0) {
+	// 	blink_count = 0;
+	// 	HAL_GPIO_TogglePin(LED_BUILTIN_GPIO_Port, LED_BUILTIN_Pin);
+	// }
 	encoder_data.timestamp = micros64();
 	time_packet.delta = encoder_data.timestamp - time_packet.timestamp;
 
@@ -138,12 +141,40 @@ void serial_hub_write_cb(void *ctx, uint8_t *data, fsize_t size) {
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 	if (huart->Instance == USART2) {
-		serial_hub_on_read(&uart_hub, dma_rx_buf, Size);
+		// will not reset because of static keyword.
+		static uint16_t old_pos = 0;
+
+		uint16_t curr_pos = Size;
+
+		if (curr_pos != old_pos) {
+			if (curr_pos > old_pos) {
+				uint16_t chunk_length = curr_pos - old_pos;
+				serial_hub_on_read(&uart_hub, &dma_rx_buf[old_pos],
+								   chunk_length);
+			} else {
+				uint16_t length_to_end = sizeof(dma_rx_buf) - old_pos;
+				serial_hub_on_read(&uart_hub, &dma_rx_buf[old_pos],
+								   length_to_end);
+
+				if (curr_pos > 0) {
+					serial_hub_on_read(&uart_hub, &dma_rx_buf[0], curr_pos);
+				}
+			}
+
+			// Move our read pointer up to match the hardware write pointer
+			old_pos = curr_pos;
+		}
 	}
 }
 
 void serial_hub_motor_direction_cb(void *ctx, uint8_t *data, fsize_t size) {
 	packet_motor_direction *dir = (packet_motor_direction *)data;
+	// int16_t a = 32000;
+	if (dir->front_left == 0 || dir->front_right == 0 || dir->back_left == 0 ||
+		dir->back_right == 0) {
+
+		HAL_GPIO_TogglePin(LED_BUILTIN_GPIO_Port, LED_BUILTIN_Pin);
+	}
 	motor_set_direction(&motor_fr, dir->front_right);
 	motor_set_direction(&motor_fl, dir->front_left);
 

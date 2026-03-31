@@ -1,3 +1,4 @@
+
 #include "main.h"
 #include "motor.h"
 #include "serial_hub.h"
@@ -32,6 +33,12 @@ void serial_hub_motor_direction_cb(void *ctx, uint8_t *data, fsize_t size);
 
 void serial_hub_write_cb(void *ctx, uint8_t *data, fsize_t size);
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 void setup();
 
 void loop();
+#ifdef __cplusplus
+}
+#endif
