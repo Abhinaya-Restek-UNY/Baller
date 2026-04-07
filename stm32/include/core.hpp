@@ -20,12 +20,12 @@ typedef struct __attribute__((packed)) {
 	int32_t deltaC;
 } packet_encoder;
 
-typedef struct {
-	motor_direction_t front_right;
-	motor_direction_t front_left;
-	motor_direction_t back_right;
-	motor_direction_t back_left;
-} packet_motor_direction;
+typedef struct __attribute__((packed)) {
+	int16_t front_left;
+	int16_t front_right;
+	int16_t back_left;
+	int16_t back_right;
+} packet_motor;
 
 uint64_t micros64(void);
 

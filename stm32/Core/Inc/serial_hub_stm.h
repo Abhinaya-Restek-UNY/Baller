@@ -6,17 +6,17 @@
 #define MOTOR_PACKET_ID 4
 
 typedef struct {
-  uint64_t timestamp;
-  int32_t revolutionA;
-  int32_t revolutionB;
-  int32_t revolutionC;
+	uint64_t timestamp;
+	int32_t revolutionA;
+	int32_t revolutionB;
+	int32_t revolutionC;
 } packet_encoder_data;
 
-typedef struct {
-  motor_direction_t front_right;
-  motor_direction_t front_left;
-  motor_direction_t back_right;
-  motor_direction_t back_left;
-} packet_motor_direction;
+typedef struct __attribute__((packed)) {
+	int16_t front_left;
+	int16_t front_right;
+	int16_t back_left;
+	int16_t back_right;
+} packet_motor;
 
 #endif

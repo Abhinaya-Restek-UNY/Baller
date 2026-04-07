@@ -56,9 +56,8 @@ void setup() {
 
 	HAL_UARTEx_ReceiveToIdle_DMA(&huart2, dma_rx_buf, sizeof(dma_rx_buf));
 
-	serial_hub_attach_topic(&uart_hub, MOTOR_PACKET_ID,
-							sizeof(packet_motor_direction), NULL,
-							serial_hub_motor_direction_cb);
+	serial_hub_attach_topic(&uart_hub, MOTOR_PACKET_ID, sizeof(packet_motor),
+							NULL, serial_hub_motor_direction_cb);
 
 	motor_init(&motor_fr);
 	motor_init(&motor_fl);
@@ -86,14 +85,13 @@ static inline int32_t update_encoder(uint16_t *previous,
 	return delta;
 };
 
-// uint8_t blink_count = 0;
-
 void loop() {
-	// blink_count++;
-	// if ((blink_count % 15) == 0) {
-	// 	blink_count = 0;
-	// 	HAL_GPIO_TogglePin(LED_BUILTIN_GPIO_Port, LED_BUILTIN_Pin);
-	// }
+	static uint8_t blink_count = 0;
+	blink_count++;
+	if ((blink_count % 15) == 0) {
+		blink_count = 0;
+		HAL_GPIO_TogglePin(LED_BUILTIN_GPIO_Port, LED_BUILTIN_Pin);
+	}
 	encoder_data.timestamp = micros64();
 	time_packet.delta = encoder_data.timestamp - time_packet.timestamp;
 
@@ -168,13 +166,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 }
 
 void serial_hub_motor_direction_cb(void *ctx, uint8_t *data, fsize_t size) {
-	packet_motor_direction *dir = (packet_motor_direction *)data;
-	// int16_t a = 32000;
-	if (dir->front_left == 0 || dir->front_right == 0 || dir->back_left == 0 ||
-		dir->back_right == 0) {
+	packet_motor *dir = (packet_motor *)data;
 
-		HAL_GPIO_TogglePin(LED_BUILTIN_GPIO_Port, LED_BUILTIN_Pin);
-	}
 	motor_set_direction(&motor_fr, dir->front_right);
 	motor_set_direction(&motor_fl, dir->front_left);
 
