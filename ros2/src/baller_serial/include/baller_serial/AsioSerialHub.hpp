@@ -17,7 +17,7 @@ public:
         logger(logger), device(device), baud_rate(baud_rate) {
 
     serial_hub_initialize(&this->hub, (write_cb_t)this->write_to_serial, this);
-    serial_hub_reserve_memory(&this->hub, sizeof(max_message));
+    serial_hub_reserve_memory(&this->hub, max_message);
 
     asio_thread = std::thread([this]() { this->serial_io_context.run(); });
 
@@ -37,7 +37,7 @@ public:
 
   int8_t connect() {
     if (this->serial_io_port.is_open()) {
-      return 0;
+      return -1;
     }
     RCLCPP_INFO(this->logger, "Connecting to %s with %d baud rate...",
                 this->device.c_str(), this->baud_rate);
@@ -79,7 +79,7 @@ public:
   }
 
   template <typename T> void write(uint8_t id, T *packet) {
-    serial_hub_write_topic(&this->hub, id, (uint8_t *)&packet, sizeof(T));
+    serial_hub_write_topic(&this->hub, id, (uint8_t *)packet, sizeof(T));
   }
 
 private:
@@ -104,7 +104,8 @@ private:
   static void write_to_serial(AsioSerialHub *_this, uint8_t *data,
                               fsize_t size) {
     if (_this->serial_io_port.is_open()) {
-      _this->serial_io_port.write_some(boost::asio::buffer(data, size));
+      boost::asio::write(_this->serial_io_port,
+                         boost::asio::buffer(data, size));
       return;
     }
 
