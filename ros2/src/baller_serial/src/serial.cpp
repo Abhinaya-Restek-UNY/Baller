@@ -1,6 +1,7 @@
 #include "AsioSerialHub.hpp"
 #include "Timesync.hpp"
-#include "baller_interfaces/srv/motor_parameter.hpp"
+#include "baller_interfaces/msg/motor_parameter.hpp"
+#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include <rclcpp/rclcpp.hpp>
 
 #include "boost/asio.hpp"
@@ -26,11 +27,11 @@ public:
             sizeof(packet_mpu), this->get_logger()),
         timesync(this->get_logger()) {
 
-    this->set_motor_service =
-        this->create_service<baller_interfaces::srv::MotorParameter>(
-            "set_motor",
-            std::bind(&BallerSerial::handle_set_motor_request, this,
-                      std::placeholders::_1, std::placeholders::_2));
+    this->motor_sub =
+        this->create_subscription<baller_interfaces::msg::MotorParameter>(
+            "set_motor", 10,
+            std::bind(&BallerSerial::handle_set_motor, this,
+                      std::placeholders::_1));
 
     this->serial_io_port_reconnect_timer = this->create_wall_timer(
         3s, std::bind(&AsioSerialHub::connect, &this->serial));
@@ -50,29 +51,21 @@ private:
   AsioSerialHub serial;
   Timesync timesync;
   rclcpp::TimerBase::SharedPtr serial_io_port_reconnect_timer;
-  rclcpp::Service<baller_interfaces::srv::MotorParameter>::SharedPtr
-      set_motor_service;
+
+  rclcpp::Subscription<baller_interfaces::msg::MotorParameter>::SharedPtr
+      motor_sub;
+
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
 
-  void handle_set_motor_request(
-      const std::shared_ptr<baller_interfaces::srv::MotorParameter::Request>
-          request,
-      std::shared_ptr<baller_interfaces::srv::MotorParameter::Response>
-          response) {
-    if (!this->serial.is_open()) {
-      response->success = false;
-      return; // Stop right here
-    }
+  void handle_set_motor(const baller_interfaces::msg::MotorParameter &motor) {
     packet_motor cmd = {};
-    cmd.front_right = request->front_right;
-    cmd.front_left = request->front_left;
-    cmd.back_right = request->back_right;
-    cmd.back_left = request->back_left;
+    cmd.front_right = motor.front_right;
+    cmd.front_left = motor.front_left;
+    cmd.back_right = motor.back_right;
+    cmd.back_left = motor.back_left;
 
     this->serial.write<packet_motor>(MOTOR_PACKET_ID, &cmd);
-
-    response->success = true;
   }
 
   static void on_receive_mpu(BallerSerial *_this, packet_mpu *packet, fsize_t) {

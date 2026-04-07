@@ -9,10 +9,10 @@
 typedef int16_t motor_direction_t;
 
 typedef struct __attribute__((packed)) {
-  motor_direction_t front_right;
-  motor_direction_t front_left;
-  motor_direction_t back_right;
-  motor_direction_t back_left;
+  int16_t front_left;
+  int16_t front_right;
+  int16_t back_left;
+  int16_t back_right;
 } packet_motor;
 
 typedef struct __attribute__((packed)) {

@@ -21,9 +21,9 @@ public:
     odom_msg_.child_frame_id = "base_link";
 
     // Set the covariance matrix once (assuming 0.01 variance for x, y, yaw)
-    odom_msg_.twist.covariance[0] = 0.01;  // X velocity
-    odom_msg_.twist.covariance[7] = 0.01;  // Y velocity
-    odom_msg_.twist.covariance[35] = 0.01; // Yaw velocity
+    odom_msg_.twist.covariance[0] = 0.001;  // X velocity
+    odom_msg_.twist.covariance[7] = 0.001;  // Y velocity
+    odom_msg_.twist.covariance[35] = 0.001; // Yaw velocity
 
     imu_msg_.header.frame_id = "imu_link"; // Must match your TF tree
 
@@ -33,9 +33,9 @@ public:
     imu_msg_.orientation_covariance[8] = 0.001; // Yaw variance
 
     // 2. Linear Acceleration Covariance (Accelerometer noise)
-    imu_msg_.linear_acceleration_covariance[0] = 0.01; // X accel variance
-    imu_msg_.linear_acceleration_covariance[4] = 0.01; // Y accel variance
-    imu_msg_.linear_acceleration_covariance[8] = 0.01; // Z accel variance
+    imu_msg_.linear_acceleration_covariance[0] = 0.1; // X accel variance
+    imu_msg_.linear_acceleration_covariance[4] = 0.1; // Y accel variance
+    imu_msg_.linear_acceleration_covariance[8] = 0.1; // Z accel variance
 
     // 3. Angular Velocity Covariance (Gyroscope)
     // CRITICAL: Setting the first element to -1.0 is the standard ROS way to
@@ -57,8 +57,8 @@ public:
     this->imu_msg_.header.stamp.sec = packet->timestamp / 1000000;
     this->imu_msg_.header.stamp.nanosec = (packet->timestamp % 1000000) * 1000;
 
-    this->imu_msg_.linear_acceleration.x = packet->a_x * this->accel_resolution;
     this->imu_msg_.linear_acceleration.y = packet->a_y * this->accel_resolution;
+    this->imu_msg_.linear_acceleration.x = packet->a_x * this->accel_resolution;
     this->imu_msg_.linear_acceleration.z = packet->a_z * this->accel_resolution;
 
     this->imu_msg_.orientation.x = packet->q_x;
@@ -87,10 +87,10 @@ public:
          this->track_width_mm) /
         delta_sec;
 
-    this->odom_msg_.twist.twist.linear.x =
+    this->odom_msg_.twist.twist.linear.y =
         (((double)packet->deltaB * this->encoder_resolution_dis) / delta_sec);
 
-    this->odom_msg_.twist.twist.linear.y =
+    this->odom_msg_.twist.twist.linear.x =
         (((packet->deltaA + packet->deltaC) * this->encoder_resolution_dis) /
          2.0) /
         delta_sec;

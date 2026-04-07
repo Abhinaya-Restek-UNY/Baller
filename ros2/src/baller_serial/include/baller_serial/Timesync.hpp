@@ -26,6 +26,9 @@ public:
       update_time_sync(this->stm32, packet, now);
 
       if (this->stm32.total_packet < TIME_WARM_UP_PACKET_TOTAL) {
+
+        RCLCPP_INFO(this->logger, "(%d) SYNC TIME delta(%lu) timestamp(%lu)",
+                    packet->unit_index, packet->delta, packet->timestamp);
         this->stm32.total_packet++;
         RCLCPP_INFO(this->logger, "[%d/%d] STM32 time sync warm up...",
                     this->stm32.total_packet, TIME_WARM_UP_PACKET_TOTAL);
@@ -37,12 +40,17 @@ public:
 
       RCLCPP_INFO(this->logger, "Booting up packet handler!");
 
-      return 1;
       this->esp32.total_packet++;
       this->stm32.total_packet++;
+      return 1;
     }
 
     return 0;
+  };
+
+  void reset() {
+    this->esp32.total_packet = 0;
+    this->stm32.total_packet = 0;
   };
 
   uint64_t sync_stm32_time(uint64_t measured) {
